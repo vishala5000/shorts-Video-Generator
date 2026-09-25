@@ -1,0 +1,47 @@
+name: Auto Build & Sign APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    # Use specific Ubuntu version to avoid future migration warnings
+    runs-on: ubuntu-24.04 
+    steps:
+      - uses: actions/checkout@v4
+
+      # Updated to v5 to fix the deprecation warning
+      - uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.2'
+
+      - name: Generate Auto-Sign Keystore
+        run: |
+          keytool -genkey -v -keystore auto.jks -alias auto -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass auto123 -keypass auto123 -dname "CN=AutoCI"
+
+      - name: Build & Auto-Sign Release APK
+        run: |
+          gradle assembleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file=$(pwd)/auto.jks \
+            -Pandroid.injected.signing.store.password=auto123 \
+            -Pandroid.injected.signing.key.alias=auto \
+            -Pandroid.injected.signing.key.password=auto123
+
+      - name: Find and Prepare APK
+        run: |
+          APK=$(find . -path "*/build/outputs/apk/*/*.apk" ! -name "*unaligned*" | head -n 1)
+          mkdir -p ./output
+          cp "$APK" ./output/app-release.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Signed-APK
+          path: ./output/app-release.apk
