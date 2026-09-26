@@ -97,13 +97,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun checkPermissions(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            // Android 13+ - No storage permissions needed for MediaStore
             true
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            // Android 10-12 - No storage permissions needed for MediaStore
             true
         } else {
-            // Android 9 and below - Need explicit permissions
             ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
         }
     }
@@ -280,10 +277,13 @@ class MainActivity : AppCompatActivity() {
         val inputsFile = File(cacheDir, "inputs.txt")
         val sb = StringBuilder()
         for (i in 1..200) {
-            val videoPath = File(cacheDir, "$i.mp4").absolutePath
-            sb.append("file '$videoPath'\n")
+            // Escape single quotes in path just in case
+            val videoPath = File(cacheDir, "$i.mp4").absolutePath.replace("'", "\\'")
+            
+            // CRITICAL FIX: inpoint and outpoint MUST come BEFORE the file directive
             sb.append("inpoint 0\n")
             sb.append("outpoint 0.04\n")
+            sb.append("file '$videoPath'\n")
         }
         inputsFile.writeText(sb.toString())
 
@@ -292,9 +292,10 @@ class MainActivity : AppCompatActivity() {
         textFile.writeText(wrappedText)
 
         val outputPath = File(outputDir, "video_$index.mp4").absolutePath
-        val fontPath = File(cacheDir, "font.ttf").absolutePath
+        val fontPath = File(cacheDir, "font.ttf").absolutePath.replace("'", "\\'")
+        val textFilePath = textFile.absolutePath.replace("'", "\\'")
 
-        val filter = "drawtext=fontfile='$fontPath':textfile='$textFile':fontcolor=white:fontsize=80:x=200:y=300:box=1:boxcolor=black@0.5:boxborderw=10:line_spacing=2"
+        val filter = "drawtext=fontfile='$fontPath':textfile='$textFilePath':fontcolor=white:fontsize=80:x=200:y=300:box=1:boxcolor=black@0.5:boxborderw=10:line_spacing=2"
 
         val args = arrayOf(
             "-y",
@@ -308,7 +309,10 @@ class MainActivity : AppCompatActivity() {
 
         val session = FFmpegKit.executeWithArguments(args)
         if (!ReturnCode.isSuccess(session.returnCode)) {
-            throw Exception("FFmpeg failed for line $index: ${session.allLogsAsString}")
+            // Get the last 10 lines of the log to keep the error message readable
+            val logs = session.allLogsAsString
+            val lastLines = logs.split("\n").takeLast(10).joinToString("\n")
+            throw Exception("FFmpeg failed for line $index.\nFFmpeg Log:\n$lastLines")
         }
     }
 
