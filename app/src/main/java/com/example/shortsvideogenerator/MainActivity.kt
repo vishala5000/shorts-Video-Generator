@@ -1,12 +1,14 @@
 package com.example.shortsvideogenerator
 
 import android.Manifest
+import android.content.ContentValues
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.provider.MediaStore
 import android.widget.Button
-import android.widget.EditText
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
@@ -16,6 +18,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.ReturnCode
+import com.google.android.material.textfield.TextInputEditText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -29,7 +32,7 @@ import java.util.zip.ZipOutputStream
 
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var textInput: EditText
+    private lateinit var textInput: TextInputEditText
     private lateinit var generateButton: Button
     private lateinit var downloadZipButton: Button
     private lateinit var statusText: TextView
@@ -57,15 +60,36 @@ class MainActivity : AppCompatActivity() {
 
         downloadZipButton.setOnClickListener {
             generatedZipFile?.let { zipFile ->
-                val destDir = File(getExternalFilesDir(Environment.DIRECTORY_MOVIES), "Videos")
-                destDir.mkdirs()
-                val destFile = File(destDir, "ShortsVideos.zip")
-                try {
-                    zipFile.copyTo(destFile, overwrite = true)
-                    Toast.makeText(this, "Saved to ${destFile.absolutePath}", Toast.LENGTH_LONG).show()
-                    statusText.text = "ZIP successfully saved to Videos folder."
-                } catch (e: Exception) {
-                    Toast.makeText(this, "Error saving: ${e.message}", Toast.LENGTH_SHORT).show()
+                lifecycleScope.launch(Dispatchers.IO) {
+                    try {
+                        updateStatus("Saving ZIP to Videos folder...")
+                        val uri = saveToVideosFolder(zipFile)
+                        
+                        withContext(Dispatchers.Main) {
+                            if (uri != null) {
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    "✅ Saved to Videos folder!",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                                statusText.text = "✅ Videos saved successfully!"
+                            } else {
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    "❌ Error saving to Videos folder",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    } catch (e: Exception) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Error: ${e.message}",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
                 }
             }
         }
@@ -73,17 +97,27 @@ class MainActivity : AppCompatActivity() {
 
     private fun checkPermissions(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_GRANTED
+            // Android 13+ - No storage permissions needed for MediaStore
+            true
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // Android 10-12 - No storage permissions needed for MediaStore
+            true
         } else {
+            // Android 9 and below - Need explicit permissions
             ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
         }
     }
 
     private fun requestPermissions() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.READ_MEDIA_VIDEO, Manifest.permission.READ_MEDIA_AUDIO), 100)
-        } else {
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.READ_EXTERNAL_STORAGE), 100)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                    Manifest.permission.READ_EXTERNAL_STORAGE
+                ),
+                100
+            )
         }
     }
 
@@ -95,17 +129,17 @@ class MainActivity : AppCompatActivity() {
         }
 
         generateButton.isEnabled = false
+        downloadZipButton.visibility = Button.GONE
         progressBar.visibility = ProgressBar.VISIBLE
         progressBar.max = 100
         progressBar.progress = 0
-        downloadZipButton.visibility = Button.GONE
 
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val cacheDir = File(cacheDir, "shorts_assets")
                 cacheDir.mkdirs()
 
-                updateStatus("Extracting bundled assets from APK (Parallel for max speed)...")
+                updateStatus("Extracting assets from APK...")
                 extractAssets(cacheDir)
 
                 val outputDir = File(cacheDir, "generated_videos")
@@ -117,25 +151,59 @@ class MainActivity : AppCompatActivity() {
                     progressBar.progress = ((index + 1) * 100) / lines.size
                 }
 
-                updateStatus("Zipping videos...")
+                updateStatus("Creating ZIP file...")
                 val zipFile = File(cacheDir, "ShortsVideos.zip")
                 zipFiles(outputDir, zipFile)
                 generatedZipFile = zipFile
 
                 withContext(Dispatchers.Main) {
-                    statusText.text = "Generation complete! Click Download to save."
+                    statusText.text = "✅ Generation complete! Tap Download to save."
                     downloadZipButton.visibility = Button.VISIBLE
                     generateButton.isEnabled = true
                     progressBar.visibility = ProgressBar.GONE
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    statusText.text = "Error: ${e.message}"
+                    statusText.text = "❌ Error: ${e.message}"
                     generateButton.isEnabled = true
                     progressBar.visibility = ProgressBar.GONE
                 }
             }
         }
+    }
+
+    private suspend fun saveToVideosFolder(zipFile: File): Uri? = withContext(Dispatchers.IO) {
+        val resolver = contentResolver
+        val contentValues = ContentValues().apply {
+            put(MediaStore.Video.Media.DISPLAY_NAME, "ShortsVideos_${System.currentTimeMillis()}.zip")
+            put(MediaStore.Video.Media.MIME_TYPE, "application/zip")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/Videos")
+                put(MediaStore.Video.Media.IS_PENDING, 1)
+            }
+        }
+
+        val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        } else {
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+        }
+
+        val uri = resolver.insert(collection, contentValues)
+        uri?.let {
+            resolver.openOutputStream(it)?.use { outputStream ->
+                zipFile.inputStream().use { inputStream ->
+                    inputStream.copyTo(outputStream)
+                }
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                contentValues.clear()
+                contentValues.put(MediaStore.Video.Media.IS_PENDING, 0)
+                resolver.update(it, contentValues, null, null)
+            }
+        }
+        uri
     }
 
     private suspend fun extractAssets(cacheDir: File) = coroutineScope {
@@ -151,12 +219,10 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (pendingExtractions.isEmpty()) {
-            updateStatus("All assets already extracted. 100% Offline mode ready.")
+            updateStatus("Assets ready (cached)")
             return@coroutineScope
         }
 
-        updateStatus("Extracting ${pendingExtractions.size} assets in parallel...")
-        
         val chunkSize = 20
         pendingExtractions.chunked(chunkSize).forEach { chunk ->
             chunk.map { fileName ->
