@@ -1,43 +1,11 @@
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
 plugins {
-    id 'com.android.application'
-    id 'org.jetbrains.kotlin.android'
+    // Apply false so they are available to subprojects but not executed here
+    id 'com.android.application' version '8.2.2' apply false
+    id 'org.jetbrains.kotlin.android' version '1.9.22' apply false
 }
 
-android {
-    namespace 'com.example.shortsvideogenerator'
-    compileSdk 34
-
-    defaultConfig {
-        applicationId "com.example.shortsvideogenerator"
-        minSdk 26
-        targetSdk 34
-        versionCode 1
-        versionName "1.0"
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-        }
-    }
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
-    }
-    kotlinOptions {
-        jvmTarget = '1.8'
-    }
-}
-
-dependencies {
-    implementation 'androidx.core:core-ktx:1.12.0'
-    implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation 'com.google.android.material:material:1.11.0'
-    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
-    
-    // FFmpeg Kit: Using the actively maintained drop-in replacement 
-    // (The original com.arthenica fork was retired and removed from Maven)
-    implementation 'dev.ffmpegkit-maintained:ffmpeg-kit-full:8.1.7'
+// Clean task to help with CI/CD and local builds
+tasks.register('clean', Delete) {
+    delete rootProject.buildDir
 }
