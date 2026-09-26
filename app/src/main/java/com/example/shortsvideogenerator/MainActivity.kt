@@ -1,6 +1,5 @@
 package com.example.shortsvideogenerator
 
-import android.Manifest
 import android.content.ContentValues
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -67,27 +66,15 @@ class MainActivity : AppCompatActivity() {
                         
                         withContext(Dispatchers.Main) {
                             if (uri != null) {
-                                Toast.makeText(
-                                    this@MainActivity,
-                                    "✅ Saved to Videos folder!",
-                                    Toast.LENGTH_LONG
-                                ).show()
+                                Toast.makeText(this@MainActivity, "✅ Saved to Videos folder!", Toast.LENGTH_LONG).show()
                                 statusText.text = "✅ Videos saved successfully!"
                             } else {
-                                Toast.makeText(
-                                    this@MainActivity,
-                                    "❌ Error saving to Videos folder",
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                                Toast.makeText(this@MainActivity, "❌ Error saving to Videos folder", Toast.LENGTH_SHORT).show()
                             }
                         }
                     } catch (e: Exception) {
                         withContext(Dispatchers.Main) {
-                            Toast.makeText(
-                                this@MainActivity,
-                                "Error: ${e.message}",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
                         }
                     }
                 }
@@ -96,12 +83,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun checkPermissions(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            true
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            true
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            true // MediaStore handles this automatically on Android 10+
         } else {
-            ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+            ContextCompat.checkSelfPermission(this, android.Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
         }
     }
 
@@ -109,10 +94,7 @@ class MainActivity : AppCompatActivity() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
             ActivityCompat.requestPermissions(
                 this,
-                arrayOf(
-                    Manifest.permission.WRITE_EXTERNAL_STORAGE,
-                    Manifest.permission.READ_EXTERNAL_STORAGE
-                ),
+                arrayOf(android.Manifest.permission.WRITE_EXTERNAL_STORAGE, android.Manifest.permission.READ_EXTERNAL_STORAGE),
                 100
             )
         }
@@ -172,32 +154,37 @@ class MainActivity : AppCompatActivity() {
     private suspend fun saveToVideosFolder(zipFile: File): Uri? = withContext(Dispatchers.IO) {
         val resolver = contentResolver
         val contentValues = ContentValues().apply {
-            put(MediaStore.Video.Media.DISPLAY_NAME, "ShortsVideos_${System.currentTimeMillis()}.zip")
-            put(MediaStore.Video.Media.MIME_TYPE, "application/zip")
+            put(MediaStore.MediaColumns.DISPLAY_NAME, "ShortsVideos_${System.currentTimeMillis()}.zip")
+            put(MediaStore.MediaColumns.MIME_TYPE, "application/zip")
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/Videos")
-                put(MediaStore.Video.Media.IS_PENDING, 1)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/Videos")
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
             }
         }
 
+        // Use MediaStore.Files for maximum compatibility with .zip files across all Android versions
         val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
         } else {
-            MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            MediaStore.Files.getContentUri("external")
         }
 
         val uri = resolver.insert(collection, contentValues)
         uri?.let {
-            resolver.openOutputStream(it)?.use { outputStream ->
-                zipFile.inputStream().use { inputStream ->
-                    inputStream.copyTo(outputStream)
+            try {
+                resolver.openOutputStream(it)?.use { outputStream ->
+                    zipFile.inputStream().use { inputStream ->
+                        inputStream.copyTo(outputStream)
+                    }
                 }
-            }
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                contentValues.clear()
-                contentValues.put(MediaStore.Video.Media.IS_PENDING, 0)
-                resolver.update(it, contentValues, null, null)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    contentValues.clear()
+                    contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                    resolver.update(it, contentValues, null, null)
+                }
+            } catch (e: Exception) {
+                resolver.delete(it, null, null)
+                throw e
             }
         }
         uri
@@ -277,10 +264,9 @@ class MainActivity : AppCompatActivity() {
         val inputsFile = File(cacheDir, "inputs.txt")
         val sb = StringBuilder()
         for (i in 1..200) {
-            // Escape single quotes in path just in case
             val videoPath = File(cacheDir, "$i.mp4").absolutePath.replace("'", "\\'")
             
-            // CRITICAL FIX: inpoint and outpoint MUST come BEFORE the file directive
+            // CRITICAL: inpoint and outpoint MUST precede the file directive in FFmpeg concat demuxer
             sb.append("inpoint 0\n")
             sb.append("outpoint 0.04\n")
             sb.append("file '$videoPath'\n")
@@ -309,10 +295,8 @@ class MainActivity : AppCompatActivity() {
 
         val session = FFmpegKit.executeWithArguments(args)
         if (!ReturnCode.isSuccess(session.returnCode)) {
-            // Get the last 10 lines of the log to keep the error message readable
-            val logs = session.allLogsAsString
-            val lastLines = logs.split("\n").takeLast(10).joinToString("\n")
-            throw Exception("FFmpeg failed for line $index.\nFFmpeg Log:\n$lastLines")
+            val logs = session.allLogsAsString.split("\n").takeLast(15).joinToString("\n")
+            throw Exception("FFmpeg failed for line $index.\nDetails:\n$logs")
         }
     }
 
