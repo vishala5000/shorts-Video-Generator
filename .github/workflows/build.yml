@@ -20,9 +20,6 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    # ============================================================
-    # FIX: Download the missing binary Gradle Wrapper JAR
-    # ============================================================
     - name: Download Gradle Wrapper Jar
       run: |
         mkdir -p gradle/wrapper
@@ -80,20 +77,31 @@ jobs:
     - name: Build Release APK
       run: ./gradlew assembleRelease --no-daemon
 
-    - name: Verify APK Size
+    - name: Verify and Upload APK
       run: |
-        echo "📦 Checking APK size..."
-        APK_PATH="app/build/outputs/apk/release/app-release.apk"
-        if [ ! -f "$APK_PATH" ]; then
-          echo "❌ ERROR: APK not found at $APK_PATH"
+        echo "📦 Finding APK file..."
+        
+        # Find any APK file in the release directory
+        APK_FILE=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -n 1)
+        
+        if [ -z "$APK_FILE" ]; then
+          echo "❌ ERROR: No APK file found in app/build/outputs/apk/release/"
+          ls -la app/build/outputs/apk/release/ || echo "Directory doesn't exist"
           exit 1
         fi
-        APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
-        echo "✅ APK built successfully: $APK_SIZE"
+        
+        echo "✅ Found APK: $APK_FILE"
+        APK_SIZE=$(du -h "$APK_FILE" | cut -f1)
+        echo "📊 APK size: $APK_SIZE"
+        
+        # Rename to consistent name for upload
+        cp "$APK_FILE" app/build/outputs/apk/release/ShortsVideoGenerator.apk
+        
+        echo "✅ APK ready for download"
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
         name: Shorts-Video-Generator-APK
-        path: app/build/outputs/apk/release/app-release.apk
+        path: app/build/outputs/apk/release/ShortsVideoGenerator.apk
         retention-days: 7
