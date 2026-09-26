@@ -165,23 +165,37 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun wrapText(text: String): String {
-        // Fontsize 80 ≈ 40-45px per char. 680px width / 42px ≈ 16 chars per line.
-        val maxCharsPerLine = 16
-        // Line height ≈ 100px. 1320px height / 100px ≈ 13 lines max.
-        val maxLines = 13
+        // Fontsize 80 ≈ 45px per char average. 680px width / 45px ≈ 15 chars per line.
+        val maxCharsPerLine = 15
+        // Line height = fontsize (80) + line_spacing (2) = 82px. 
+        // 1320px height / 82px ≈ 16 lines max.
+        val maxLines = 16
         
         val words = text.split(Regex("\\s+"))
         val lines = mutableListOf<String>()
         var currentLine = ""
         
         for (word in words) {
-            if (currentLine.isEmpty()) {
+            if (word.length > maxCharsPerLine) {
+                // Force break long words that exceed the width limit
+                if (currentLine.isNotEmpty()) {
+                    lines.add(currentLine)
+                    currentLine = ""
+                }
+                var remainingWord = word
+                while (remainingWord.length > maxCharsPerLine) {
+                    lines.add(remainingWord.substring(0, maxCharsPerLine))
+                    remainingWord = remainingWord.substring(maxCharsPerLine)
+                    if (lines.size >= maxLines) return lines.joinToString("\n")
+                }
+                currentLine = remainingWord
+            } else if (currentLine.isEmpty()) {
                 currentLine = word
             } else if ((currentLine.length + 1 + word.length) <= maxCharsPerLine) {
                 currentLine += " $word"
             } else {
                 lines.add(currentLine)
-                if (lines.size >= maxLines) break // Strictly respect height limit
+                if (lines.size >= maxLines) return lines.joinToString("\n")
                 currentLine = word
             }
         }
@@ -211,10 +225,10 @@ class MainActivity : AppCompatActivity() {
         val outputPath = File(outputDir, "video_$index.mp4").absolutePath
         val fontPath = File(cacheDir, "font.ttf").absolutePath
 
-        // x=200 centers a 680px box in 1080px width (1080-680)/2 = 200
-        // y=300 gives a 300px top margin (satisfies >200px rule). 
-        // Max height 1320px means it ends at Y=1620, leaving 300px bottom margin (satisfies >200px rule).
-        val filter = "drawtext=fontfile='$fontPath':textfile='$textFile':fontcolor=white:fontsize=80:x=200:y=300:box=1:boxcolor=black@0.5:boxborderw=10:line_spacing=10"
+        // x=200 centers a 680px box in 1080px width.
+        // y=300 gives a 300px top margin (satisfies >200px rule).
+        // line_spacing=2 ensures exactly 2px gap so text lines never touch.
+        val filter = "drawtext=fontfile='$fontPath':textfile='$textFile':fontcolor=white:fontsize=80:x=200:y=300:box=1:boxcolor=black@0.5:boxborderw=10:line_spacing=2"
 
         val args = arrayOf(
             "-y",
