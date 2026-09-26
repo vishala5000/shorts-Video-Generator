@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Signed Android APK
 
 on:
   push:
@@ -27,6 +27,20 @@ jobs:
 
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
+
+    # ============================================================
+    # GENERATE SIGNING KEYSTORE FOR SIGNED APK
+    # ============================================================
+    - name: Generate Release Keystore
+      run: |
+        echo "🔐 Generating signing keystore..."
+        keytool -genkey -v -keystore release-key.jks \
+          -keyalg RSA -keysize 2048 -validity 10000 \
+          -alias release-key \
+          -storepass android123 \
+          -keypass android123 \
+          -dname "CN=Shorts Video Generator, OU=Dev, O=Dev, L=City, ST=State, C=US"
+        echo "✅ Keystore generated successfully"
 
     - name: Download 200 Videos + Font into APK Assets
       run: |
@@ -74,18 +88,25 @@ jobs:
         echo "📊 Total assets size:"
         du -sh app/src/main/assets/
 
-    - name: Build Release APK
-      run: ./gradlew assembleRelease --no-daemon
-
-    - name: Verify and Upload APK
+    # ============================================================
+    # BUILD SIGNED RELEASE APK
+    # ============================================================
+    - name: Build Signed Release APK
       run: |
-        echo "📦 Finding APK file..."
+        ./gradlew assembleRelease --no-daemon \
+          -Pandroid.injected.signing.store.file=$(pwd)/release-key.jks \
+          -Pandroid.injected.signing.store.password=android123 \
+          -Pandroid.injected.signing.key.alias=release-key \
+          -Pandroid.injected.signing.key.password=android123
+
+    - name: Verify and Upload Signed APK
+      run: |
+        echo "📦 Finding signed APK file..."
         
-        # Find any APK file in the release directory
         APK_FILE=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -n 1)
         
         if [ -z "$APK_FILE" ]; then
-          echo "❌ ERROR: No APK file found in app/build/outputs/apk/release/"
+          echo "❌ ERROR: No APK file found"
           ls -la app/build/outputs/apk/release/ || echo "Directory doesn't exist"
           exit 1
         fi
@@ -94,14 +115,19 @@ jobs:
         APK_SIZE=$(du -h "$APK_FILE" | cut -f1)
         echo "📊 APK size: $APK_SIZE"
         
-        # Rename to consistent name for upload
-        cp "$APK_FILE" app/build/outputs/apk/release/ShortsVideoGenerator.apk
+        # Verify it's signed
+        if echo "$APK_FILE" | grep -q "unsigned"; then
+          echo "❌ ERROR: APK is unsigned!"
+          exit 1
+        fi
         
-        echo "✅ APK ready for download"
+        echo "✅ APK is signed and ready for installation"
+        
+        cp "$APK_FILE" app/build/outputs/apk/release/ShortsVideoGenerator.apk
 
-    - name: Upload APK Artifact
+    - name: Upload Signed APK Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: Shorts-Video-Generator-APK
+        name: Shorts-Video-Generator-Signed-APK
         path: app/build/outputs/apk/release/ShortsVideoGenerator.apk
         retention-days: 7
