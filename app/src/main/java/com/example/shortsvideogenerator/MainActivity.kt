@@ -164,6 +164,34 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun wrapText(text: String): String {
+        // Fontsize 80 ≈ 40-45px per char. 680px width / 42px ≈ 16 chars per line.
+        val maxCharsPerLine = 16
+        // Line height ≈ 100px. 1320px height / 100px ≈ 13 lines max.
+        val maxLines = 13
+        
+        val words = text.split(Regex("\\s+"))
+        val lines = mutableListOf<String>()
+        var currentLine = ""
+        
+        for (word in words) {
+            if (currentLine.isEmpty()) {
+                currentLine = word
+            } else if ((currentLine.length + 1 + word.length) <= maxCharsPerLine) {
+                currentLine += " $word"
+            } else {
+                lines.add(currentLine)
+                if (lines.size >= maxLines) break // Strictly respect height limit
+                currentLine = word
+            }
+        }
+        if (currentLine.isNotEmpty() && lines.size < maxLines) {
+            lines.add(currentLine)
+        }
+        
+        return lines.joinToString("\n")
+    }
+
     private suspend fun generateVideoForLine(text: String, index: Int, cacheDir: File, outputDir: File) {
         val inputsFile = File(cacheDir, "inputs.txt")
         val sb = StringBuilder()
@@ -175,14 +203,18 @@ class MainActivity : AppCompatActivity() {
         }
         inputsFile.writeText(sb.toString())
 
-        // Use textfile to avoid complex FFmpeg string escaping issues
+        // Pre-wrap text to strictly fit 680px width and 1320px height constraints
+        val wrappedText = wrapText(text)
         val textFile = File(cacheDir, "text_$index.txt")
-        textFile.writeText(text)
+        textFile.writeText(wrappedText)
 
         val outputPath = File(outputDir, "video_$index.mp4").absolutePath
         val fontPath = File(cacheDir, "font.ttf").absolutePath
 
-        val filter = "drawtext=fontfile='$fontPath':textfile='$textFile':fontcolor=white:fontsize=80:x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.5:boxborderw=10"
+        // x=200 centers a 680px box in 1080px width (1080-680)/2 = 200
+        // y=300 gives a 300px top margin (satisfies >200px rule). 
+        // Max height 1320px means it ends at Y=1620, leaving 300px bottom margin (satisfies >200px rule).
+        val filter = "drawtext=fontfile='$fontPath':textfile='$textFile':fontcolor=white:fontsize=80:x=200:y=300:box=1:boxcolor=black@0.5:boxborderw=10:line_spacing=10"
 
         val args = arrayOf(
             "-y",
