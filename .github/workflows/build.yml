@@ -96,7 +96,6 @@ jobs:
     - name: Verify and Upload Signed APK
       run: |
         echo "📦 Finding signed APK file..."
-        
         APK_FILE=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -n 1)
         
         if [ -z "$APK_FILE" ]; then
@@ -115,7 +114,6 @@ jobs:
         fi
         
         echo "✅ APK is signed and ready for installation"
-        
         cp "$APK_FILE" app/build/outputs/apk/release/ShortsVideoGenerator.apk
 
     - name: Upload Signed APK Artifact
