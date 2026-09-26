@@ -20,6 +20,14 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
+    # ============================================================
+    # FIX: Download the missing binary Gradle Wrapper JAR
+    # ============================================================
+    - name: Download Gradle Wrapper Jar
+      run: |
+        mkdir -p gradle/wrapper
+        curl -fL -o gradle/wrapper/gradle-wrapper.jar "https://raw.githubusercontent.com/gradle/gradle/v8.2.0/gradle/wrapper/gradle-wrapper.jar"
+
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
