@@ -17,12 +17,13 @@ import androidx.lifecycle.lifecycleScope
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.ReturnCode
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
-import java.net.HttpURLConnection
-import java.net.URL
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -104,8 +105,8 @@ class MainActivity : AppCompatActivity() {
                 val cacheDir = File(cacheDir, "shorts_assets")
                 cacheDir.mkdirs()
 
-                updateStatus("Downloading assets from GitHub Releases...")
-                downloadAssets(cacheDir)
+                updateStatus("Extracting bundled assets from APK (Parallel for max speed)...")
+                extractAssets(cacheDir)
 
                 val outputDir = File(cacheDir, "generated_videos")
                 outputDir.mkdirs()
@@ -137,38 +138,42 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private suspend fun downloadAssets(cacheDir: File) {
-        val filesToDownload = mutableListOf("font.ttf")
+    private suspend fun extractAssets(cacheDir: File) = coroutineScope {
+        val assetManager = applicationContext.assets
+        val filesToExtract = mutableListOf("font.ttf")
         for (i in 1..200) {
-            filesToDownload.add("$i.mp4")
+            filesToExtract.add("$i.mp4")
         }
 
-        for ((index, fileName) in filesToDownload.withIndex()) {
-            val file = File(cacheDir, fileName)
-            if (file.exists() && file.length() > 0) {
-                updateStatus("Skipping $fileName (already exists)")
-                continue
-            }
-            updateStatus("Downloading $fileName (${index + 1}/${filesToDownload.size})...")
-            val url = URL("https://github.com/vishala5000/shorts-Video-Generator/releases/download/videos/$fileName")
-            val connection = url.openConnection() as HttpURLConnection
-            connection.requestMethod = "GET"
-            connection.connectTimeout = 30000
-            connection.readTimeout = 30000
+        val pendingExtractions = filesToExtract.filter { fileName ->
+            val outFile = File(cacheDir, fileName)
+            !(outFile.exists() && outFile.length() > 0)
+        }
 
-            connection.inputStream.use { input ->
-                file.outputStream().use { output ->
-                    input.copyTo(output)
+        if (pendingExtractions.isEmpty()) {
+            updateStatus("All assets already extracted. 100% Offline mode ready.")
+            return@coroutineScope
+        }
+
+        updateStatus("Extracting ${pendingExtractions.size} assets in parallel...")
+        
+        val chunkSize = 20
+        pendingExtractions.chunked(chunkSize).forEach { chunk ->
+            chunk.map { fileName ->
+                async(Dispatchers.IO) {
+                    val outFile = File(cacheDir, fileName)
+                    assetManager.open(fileName).use { input ->
+                        outFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
                 }
-            }
+            }.awaitAll()
         }
     }
 
     private fun wrapText(text: String): String {
-        // Fontsize 80 ≈ 45px per char average. 680px width / 45px ≈ 15 chars per line.
         val maxCharsPerLine = 15
-        // Line height = fontsize (80) + line_spacing (2) = 82px. 
-        // 1320px height / 82px ≈ 16 lines max.
         val maxLines = 16
         
         val words = text.split(Regex("\\s+"))
@@ -177,7 +182,6 @@ class MainActivity : AppCompatActivity() {
         
         for (word in words) {
             if (word.length > maxCharsPerLine) {
-                // Force break long words that exceed the width limit
                 if (currentLine.isNotEmpty()) {
                     lines.add(currentLine)
                     currentLine = ""
@@ -213,11 +217,10 @@ class MainActivity : AppCompatActivity() {
             val videoPath = File(cacheDir, "$i.mp4").absolutePath
             sb.append("file '$videoPath'\n")
             sb.append("inpoint 0\n")
-            sb.append("outpoint 0.04\n") // 200 clips * 0.04s = 8 seconds total
+            sb.append("outpoint 0.04\n")
         }
         inputsFile.writeText(sb.toString())
 
-        // Pre-wrap text to strictly fit 680px width and 1320px height constraints
         val wrappedText = wrapText(text)
         val textFile = File(cacheDir, "text_$index.txt")
         textFile.writeText(wrappedText)
@@ -225,9 +228,6 @@ class MainActivity : AppCompatActivity() {
         val outputPath = File(outputDir, "video_$index.mp4").absolutePath
         val fontPath = File(cacheDir, "font.ttf").absolutePath
 
-        // x=200 centers a 680px box in 1080px width.
-        // y=300 gives a 300px top margin (satisfies >200px rule).
-        // line_spacing=2 ensures exactly 2px gap so text lines never touch.
         val filter = "drawtext=fontfile='$fontPath':textfile='$textFile':fontcolor=white:fontsize=80:x=200:y=300:box=1:boxcolor=black@0.5:boxborderw=10:line_spacing=2"
 
         val args = arrayOf(
@@ -235,7 +235,7 @@ class MainActivity : AppCompatActivity() {
             "-f", "concat", "-safe", "0", "-i", inputsFile.absolutePath,
             "-vf", filter,
             "-c:v", "libx264", "-preset", "ultrafast",
-            "-c:a", "aac",
+            "-c:a", "aac", "-b:a", "128k",
             "-s", "1080x1920",
             outputPath
         )
