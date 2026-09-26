@@ -23,45 +23,37 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
-    # ============================================================
-    # CRITICAL STEP: Download all assets into the APK
-    # ============================================================
     - name: Download 200 Videos + Font into APK Assets
       run: |
         echo "📁 Creating assets directory..."
         mkdir -p app/src/main/assets
-        cd app/src/main/assets
         
         echo "📥 Downloading font.ttf..."
-        curl -fL --retry 3 -o font.ttf "https://github.com/vishala5000/shorts-Video-Generator/releases/download/videos/font.ttf"
+        curl -fL --retry 3 -o app/src/main/assets/font.ttf "https://github.com/vishala5000/shorts-Video-Generator/releases/download/videos/font.ttf"
         
         echo "📥 Downloading 200 video clips in parallel (20 at a time)..."
-        seq 1 200 | xargs -P 20 -I {} curl -fL --retry 3 -O "https://github.com/vishala5000/shorts-Video-Generator/releases/download/videos/{}.mp4"
+        seq 1 200 | xargs -P 20 -I {} curl -fL --retry 3 -o "app/src/main/assets/{}.mp4" "https://github.com/vishala5000/shorts-Video-Generator/releases/download/videos/{}.mp4"
         
         echo ""
         echo "🔍 Verifying downloads..."
         
-        # Count .mp4 files
-        FILE_COUNT=$(ls -1 *.mp4 2>/dev/null | wc -l)
+        FILE_COUNT=$(ls -1 app/src/main/assets/*.mp4 2>/dev/null | wc -l)
         echo "Found $FILE_COUNT .mp4 files"
         
-        # Check for empty files
-        EMPTY_COUNT=$(find . -name "*.mp4" -empty | wc -l)
+        EMPTY_COUNT=$(find app/src/main/assets -name "*.mp4" -empty | wc -l)
         echo "Found $EMPTY_COUNT empty .mp4 files"
         
-        # Verify font.ttf
-        if [ ! -f "font.ttf" ]; then
+        if [ ! -f "app/src/main/assets/font.ttf" ]; then
           echo "❌ ERROR: font.ttf is missing!"
           exit 1
         fi
         
-        FONT_SIZE=$(stat -c%s "font.ttf")
+        FONT_SIZE=$(stat -c%s "app/src/main/assets/font.ttf")
         if [ "$FONT_SIZE" -lt 1000 ]; then
           echo "❌ ERROR: font.ttf is too small ($FONT_SIZE bytes)!"
           exit 1
         fi
         
-        # Verify video count
         if [ "$FILE_COUNT" -ne 200 ]; then
           echo "❌ ERROR: Expected 200 mp4 files, but found $FILE_COUNT"
           exit 1
@@ -75,28 +67,11 @@ jobs:
         echo ""
         echo "✅ SUCCESS: All assets downloaded correctly!"
         echo "📊 Total assets size:"
-        du -sh .
-        echo ""
-        echo "📋 File breakdown:"
-        ls -lh | head -20
-        echo "..."
-        ls -lh | tail -10
-        
-        cd ../../..
-        
-        echo ""
-        echo "📂 Final app/src/main/assets/ size:"
         du -sh app/src/main/assets/
 
-    # ============================================================
-    # BUILD STEP
-    # ============================================================
     - name: Build Release APK
       run: ./gradlew assembleRelease --no-daemon
 
-    # ============================================================
-    # VERIFY APK SIZE (Should be ~830MB)
-    # ============================================================
     - name: Verify APK Size
       run: |
         echo "📦 Checking APK size..."
@@ -107,17 +82,10 @@ jobs:
         fi
         APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
         echo "✅ APK built successfully: $APK_SIZE"
-        if [ $(stat -c%s "$APK_PATH") -lt 500000000 ]; then
-          echo "⚠️  WARNING: APK is smaller than expected (should be ~830MB)"
-          echo "This might mean assets were not bundled correctly."
-        fi
 
-    # ============================================================
-    # UPLOAD APK AS ARTIFACT
-    # ============================================================
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: Signed-APK
+        name: Shorts-Video-Generator-APK
         path: app/build/outputs/apk/release/app-release.apk
         retention-days: 7
