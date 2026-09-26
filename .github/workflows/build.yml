@@ -14,7 +14,7 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Set up JDK 17
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v5
       with:
         java-version: '17'
         distribution: 'temurin'
@@ -28,9 +28,6 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
-    # ============================================================
-    # GENERATE SIGNING KEYSTORE FOR SIGNED APK
-    # ============================================================
     - name: Generate Release Keystore
       run: |
         echo "🔐 Generating signing keystore..."
@@ -88,9 +85,6 @@ jobs:
         echo "📊 Total assets size:"
         du -sh app/src/main/assets/
 
-    # ============================================================
-    # BUILD SIGNED RELEASE APK
-    # ============================================================
     - name: Build Signed Release APK
       run: |
         ./gradlew assembleRelease --no-daemon \
@@ -115,7 +109,6 @@ jobs:
         APK_SIZE=$(du -h "$APK_FILE" | cut -f1)
         echo "📊 APK size: $APK_SIZE"
         
-        # Verify it's signed
         if echo "$APK_FILE" | grep -q "unsigned"; then
           echo "❌ ERROR: APK is unsigned!"
           exit 1
