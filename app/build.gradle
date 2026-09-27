@@ -41,5 +41,8 @@ dependencies {
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
     
-    // NO FFMPEG - Using only native Android APIs
+    // Google's Official Native Video Editing API (No FFmpeg needed!)
+    implementation 'androidx.media3:media3-transformer:1.4.1'
+    implementation 'androidx.media3:media3-effect:1.4.1'
+    implementation 'androidx.media3:media3-common:1.4.1'
 }
