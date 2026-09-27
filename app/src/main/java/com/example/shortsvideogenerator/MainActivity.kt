@@ -30,6 +30,7 @@ import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.Transformer
+import com.google.android.material.textfield.TextInputEditText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -43,7 +44,7 @@ import kotlin.coroutines.resumeWithException
 
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var textInput: androidx.google.android.material.textfield.TextInputEditText
+    private lateinit var textInput: TextInputEditText
     private lateinit var generateButton: Button
     private lateinit var downloadZipButton: Button
     private lateinit var statusText: TextView
@@ -136,7 +137,6 @@ class MainActivity : AppCompatActivity() {
                 val outputDir = File(cacheDir, "generated_videos")
                 outputDir.mkdirs()
 
-                // Prepare the 5 background video clips
                 val mediaItems = (1..5).map { i ->
                     MediaItem.fromUri(Uri.fromFile(File(cacheDir, "$i.mp4")))
                 }
@@ -144,11 +144,9 @@ class MainActivity : AppCompatActivity() {
                 for ((index, line) in lines.withIndex()) {
                     updateStatus("Generating video ${index + 1}/${lines.size}...")
                     
-                    // Create text overlay bitmap for this specific line
                     val textBitmap = createTextBitmap(wrapText(line), cacheDir)
                     val outputPath = File(outputDir, "video_$index.mp4").absolutePath
                     
-                    // Process video natively with Media3 Transformer
                     processVideoWithText(this@MainActivity, mediaItems, textBitmap, outputPath)
                     
                     progressBar.progress = ((index + 1) * 100) / lines.size
@@ -175,7 +173,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // NATIVE ANDROID TEXT OVERLAY USING MEDIA3 TRANSFORMER
     private suspend fun processVideoWithText(
         context: Context,
         mediaItems: List<MediaItem>,
@@ -183,27 +180,51 @@ class MainActivity : AppCompatActivity() {
         outputPath: String
     ) = suspendCancellableCoroutine { continuation ->
         val overlayEffect = BitmapOverlay.createStaticBitmapOverlay(textBitmap)
-        val effects = Effects(listOf(overlayEffect), listOf()) // Video effects, Audio effects
+        val effects = Effects(listOf(overlayEffect), listOf())
         
         val sequence = EditedMediaItemSequence(mediaItems.map { EditedMediaItem.Builder(it).build() })
         val editedMediaItem = EditedMediaItem.Builder(sequence).setEffects(effects).build()
+        
+        var transformerStarted = false
+        var transformerCompleted = false
         
         val transformer = Transformer.Builder(context)
             .setVideoMimeType(MimeTypes.VIDEO_H264)
             .addListener(object : Transformer.Listener {
                 override fun onCompleted(composition: Composition, exportResult: ExportResult) {
-                    continuation.resume(Unit)
+                    transformerCompleted = true
+                    if (continuation.isActive) {
+                        continuation.resume(Unit)
+                    }
                 }
+                
                 override fun onError(composition: Composition, exportResult: ExportResult, exception: Exception) {
-                    continuation.resumeWithException(exception)
+                    transformerCompleted = true
+                    if (continuation.isActive) {
+                        continuation.resumeWithException(exception)
+                    }
                 }
             })
             .build()
-            
-        transformer.start(editedMediaItem, outputPath)
+        
+        try {
+            transformer.start(editedMediaItem, outputPath)
+            transformerStarted = true
+        } catch (e: Exception) {
+            if (continuation.isActive) {
+                continuation.resumeWithException(e)
+            }
+            return@suspendCancellableCoroutine
+        }
         
         continuation.invokeOnCancellation {
-            transformer.cancel()
+            if (transformerStarted && !transformerCompleted) {
+                try {
+                    transformer.cancel()
+                } catch (e: Exception) {
+                    // Ignore cancellation errors
+                }
+            }
         }
     }
 
@@ -211,7 +232,6 @@ class MainActivity : AppCompatActivity() {
         val bitmap = Bitmap.createBitmap(1080, 1920, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         
-        // Load custom font if available, otherwise use default bold
         val typeface = try {
             Typeface.createFromFile(File(cacheDir, "font.ttf"))
         } catch (e: Exception) {
@@ -226,13 +246,13 @@ class MainActivity : AppCompatActivity() {
         }
         
         val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#80000000") // black@0.5
+            color = Color.parseColor("#80000000")
             style = Paint.Style.FILL
         }
         
         val lines = wrappedText.split("\n")
         val fontMetrics = paint.fontMetrics
-        val lineHeight = fontMetrics.descent - fontMetrics.ascent + 2f // line_spacing=2
+        val lineHeight = fontMetrics.descent - fontMetrics.ascent + 2f
         
         var currentY = 300f
         
@@ -243,9 +263,7 @@ class MainActivity : AppCompatActivity() {
             val boxRight = 200f + textWidth + 10f
             val boxBottom = currentY + fontMetrics.descent + 10f
             
-            // Draw background box
             canvas.drawRect(boxLeft, boxTop, boxRight, boxBottom, bgPaint)
-            // Draw text
             canvas.drawText(line, 200f, currentY, paint)
             
             currentY += lineHeight
