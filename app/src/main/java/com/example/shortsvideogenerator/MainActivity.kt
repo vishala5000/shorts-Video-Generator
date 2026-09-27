@@ -263,7 +263,7 @@ class MainActivity : AppCompatActivity() {
         val inputsFile = File(cacheDir, "inputs.txt")
         val sb = StringBuilder()
         for (i in 1..5) {
-            val videoPath = File(cacheDir, "$i.mp4").absolutePath.replace("'", "\\'")
+            val videoPath = File(cacheDir, "$i.mp4").absolutePath
             sb.append("inpoint 0\n")
             sb.append("outpoint 1.6\n")
             sb.append("file '$videoPath'\n")
@@ -275,24 +275,29 @@ class MainActivity : AppCompatActivity() {
         textFile.writeText(wrappedText)
 
         val outputPath = File(outputDir, "video_$index.mp4").absolutePath
-        val fontPath = File(cacheDir, "font.ttf").absolutePath.replace("'", "\\'")
-        val textFilePath = textFile.absolutePath.replace("'", "\\'")
+        val fontPath = File(cacheDir, "font.ttf").absolutePath
+        val textFilePath = textFile.absolutePath
 
-        val filter = "drawtext=fontfile='$fontPath':textfile='$textFilePath':fontcolor=white:fontsize=80:x=200:y=300:box=1:boxcolor=black@0.5:boxborderw=10:line_spacing=2"
+        // CRITICAL FIX: Removed single quotes around paths. Android paths have no spaces, 
+        // and single quotes were causing FFmpeg to split the argument list incorrectly.
+        val filter = "drawtext=fontfile=$fontPath:textfile=$textFilePath:fontcolor=white:fontsize=80:x=200:y=300:box=1:boxcolor=black@0.5:boxborderw=10:line_spacing=2"
 
         val args = arrayOf(
             "-y",
-            "-f", "concat", "-safe", "0", "-i", inputsFile.absolutePath,
+            "-f", "concat",
+            "-safe", "0",
+            "-i", inputsFile.absolutePath,
             "-vf", filter,
-            "-c:v", "libx264", "-preset", "ultrafast",
-            "-c:a", "aac", "-b:a", "128k",
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-c:a", "aac",
+            "-b:a", "128k",
             "-s", "1080x1920",
             outputPath
         )
 
         val session = FFmpegKit.executeWithArguments(args)
         if (!ReturnCode.isSuccess(session.returnCode)) {
-            // CRITICAL FIX: Extract ONLY the actual error lines instead of the generic version banner
             val logs = session.allLogsAsString
             val errorLines = logs.split("\n").filter { line ->
                 val lower = line.lowercase()
@@ -301,7 +306,7 @@ class MainActivity : AppCompatActivity() {
             }
             
             val displayMessage = if (errorLines.isNotEmpty()) {
-                errorLines.take(10).joinToString("\n") // Show up to 10 relevant error lines
+                errorLines.take(10).joinToString("\n")
             } else {
                 logs.split("\n").takeLast(15).joinToString("\n")
             }
