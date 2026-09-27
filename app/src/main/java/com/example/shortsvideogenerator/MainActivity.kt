@@ -277,25 +277,14 @@ class MainActivity : AppCompatActivity() {
         val fontPath = File(cacheDir, "font.ttf").absolutePath
         val textFilePath = textFile.absolutePath
 
-        // CRITICAL FIX: NO quotes around paths in the filter string!
-        // When using executeWithArguments, each array element is already a separate argument
-        val filter = "drawtext=fontfile=$fontPath:textfile=$textFilePath:fontcolor=white:fontsize=60:x=(w-text_w)/2:y=(h-text_h)/2"
+        // CRITICAL FIX: Use FFmpegKit.execute() with a single command string
+        // This is MUCH more reliable than executeWithArguments()
+        val command = "-y -f concat -safe 0 -i ${inputsFile.absolutePath} " +
+                "-vf drawtext=fontfile=$fontPath:textfile=$textFilePath:fontcolor=white:fontsize=60:x=(w-text_w)/2:y=(h-text_h)/2 " +
+                "-c:v libx264 -preset ultrafast -c:a aac -b:a 128k -s 1080x1920 $outputPath"
 
-        val args = arrayOf(
-            "-y",
-            "-f", "concat",
-            "-safe", "0",
-            "-i", inputsFile.absolutePath,
-            "-vf", filter,
-            "-c:v", "libx264",
-            "-preset", "ultrafast",
-            "-c:a", "aac",
-            "-b:a", "128k",
-            "-s", "1080x1920",
-            outputPath
-        )
-
-        val session = FFmpegKit.executeWithArguments(args)
+        val session = FFmpegKit.execute(command)
+        
         if (!ReturnCode.isSuccess(session.returnCode)) {
             val logs = session.allLogsAsString
             val errorLines = logs.split("\n").filter { line ->
