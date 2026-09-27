@@ -36,5 +36,10 @@ dependencies {
     implementation 'com.google.android.material:material:1.11.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
+    
+    // FFmpeg Kit (Community Maintained Fork)
     implementation 'dev.ffmpegkit-maintained:ffmpeg-kit-full:6.0.3'
+    
+    // ⚠️ CRITICAL FIX: This line MUST be here to prevent the crash
+    implementation 'com.arthenica:smart-exception-java:0.2.1'
 }
