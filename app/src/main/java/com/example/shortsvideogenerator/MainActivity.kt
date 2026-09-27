@@ -1,12 +1,13 @@
 package com.example.shortsvideogenerator
 
 import android.content.ContentValues
+import android.content.Context
 import android.content.pm.PackageManager
-import android.media.MediaCodec
-import android.media.MediaCodecInfo
-import android.media.MediaExtractor
-import android.media.MediaFormat
-import android.media.MediaMuxer
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -20,19 +21,29 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
-import com.google.android.material.textfield.TextInputEditText
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
+import androidx.media3.effect.BitmapOverlay
+import androidx.media3.effect.Effects
+import androidx.media3.transformer.Composition
+import androidx.media3.transformer.EditedMediaItem
+import androidx.media3.transformer.EditedMediaItemSequence
+import androidx.media3.transformer.ExportResult
+import androidx.media3.transformer.Transformer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
-import java.nio.ByteBuffer
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var textInput: TextInputEditText
+    private lateinit var textInput: androidx.google.android.material.textfield.TextInputEditText
     private lateinit var generateButton: Button
     private lateinit var downloadZipButton: Button
     private lateinit var statusText: TextView
@@ -125,9 +136,21 @@ class MainActivity : AppCompatActivity() {
                 val outputDir = File(cacheDir, "generated_videos")
                 outputDir.mkdirs()
 
+                // Prepare the 5 background video clips
+                val mediaItems = (1..5).map { i ->
+                    MediaItem.fromUri(Uri.fromFile(File(cacheDir, "$i.mp4")))
+                }
+
                 for ((index, line) in lines.withIndex()) {
                     updateStatus("Generating video ${index + 1}/${lines.size}...")
-                    concatenateVideos(cacheDir, outputDir, index)
+                    
+                    // Create text overlay bitmap for this specific line
+                    val textBitmap = createTextBitmap(wrapText(line), cacheDir)
+                    val outputPath = File(outputDir, "video_$index.mp4").absolutePath
+                    
+                    // Process video natively with Media3 Transformer
+                    processVideoWithText(this@MainActivity, mediaItems, textBitmap, outputPath)
+                    
                     progressBar.progress = ((index + 1) * 100) / lines.size
                 }
 
@@ -150,6 +173,123 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    // NATIVE ANDROID TEXT OVERLAY USING MEDIA3 TRANSFORMER
+    private suspend fun processVideoWithText(
+        context: Context,
+        mediaItems: List<MediaItem>,
+        textBitmap: Bitmap,
+        outputPath: String
+    ) = suspendCancellableCoroutine { continuation ->
+        val overlayEffect = BitmapOverlay.createStaticBitmapOverlay(textBitmap)
+        val effects = Effects(listOf(overlayEffect), listOf()) // Video effects, Audio effects
+        
+        val sequence = EditedMediaItemSequence(mediaItems.map { EditedMediaItem.Builder(it).build() })
+        val editedMediaItem = EditedMediaItem.Builder(sequence).setEffects(effects).build()
+        
+        val transformer = Transformer.Builder(context)
+            .setVideoMimeType(MimeTypes.VIDEO_H264)
+            .addListener(object : Transformer.Listener {
+                override fun onCompleted(composition: Composition, exportResult: ExportResult) {
+                    continuation.resume(Unit)
+                }
+                override fun onError(composition: Composition, exportResult: ExportResult, exception: Exception) {
+                    continuation.resumeWithException(exception)
+                }
+            })
+            .build()
+            
+        transformer.start(editedMediaItem, outputPath)
+        
+        continuation.invokeOnCancellation {
+            transformer.cancel()
+        }
+    }
+
+    private fun createTextBitmap(wrappedText: String, cacheDir: File): Bitmap {
+        val bitmap = Bitmap.createBitmap(1080, 1920, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        
+        // Load custom font if available, otherwise use default bold
+        val typeface = try {
+            Typeface.createFromFile(File(cacheDir, "font.ttf"))
+        } catch (e: Exception) {
+            Typeface.DEFAULT_BOLD
+        }
+        
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = 80f
+            textAlign = Paint.Align.LEFT
+            this.typeface = typeface
+        }
+        
+        val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#80000000") // black@0.5
+            style = Paint.Style.FILL
+        }
+        
+        val lines = wrappedText.split("\n")
+        val fontMetrics = paint.fontMetrics
+        val lineHeight = fontMetrics.descent - fontMetrics.ascent + 2f // line_spacing=2
+        
+        var currentY = 300f
+        
+        lines.forEach { line ->
+            val textWidth = paint.measureText(line)
+            val boxLeft = 200f - 10f
+            val boxTop = currentY + fontMetrics.ascent - 10f
+            val boxRight = 200f + textWidth + 10f
+            val boxBottom = currentY + fontMetrics.descent + 10f
+            
+            // Draw background box
+            canvas.drawRect(boxLeft, boxTop, boxRight, boxBottom, bgPaint)
+            // Draw text
+            canvas.drawText(line, 200f, currentY, paint)
+            
+            currentY += lineHeight
+        }
+        
+        return bitmap
+    }
+
+    private fun wrapText(text: String): String {
+        val maxCharsPerLine = 15
+        val maxLines = 16
+        
+        val words = text.split(Regex("\\s+"))
+        val lines = mutableListOf<String>()
+        var currentLine = ""
+        
+        for (word in words) {
+            if (word.length > maxCharsPerLine) {
+                if (currentLine.isNotEmpty()) {
+                    lines.add(currentLine)
+                    currentLine = ""
+                }
+                var remainingWord = word
+                while (remainingWord.length > maxCharsPerLine) {
+                    lines.add(remainingWord.substring(0, maxCharsPerLine))
+                    remainingWord = remainingWord.substring(maxCharsPerLine)
+                    if (lines.size >= maxLines) return lines.joinToString("\n")
+                }
+                currentLine = remainingWord
+            } else if (currentLine.isEmpty()) {
+                currentLine = word
+            } else if ((currentLine.length + 1 + word.length) <= maxCharsPerLine) {
+                currentLine += " $word"
+            } else {
+                lines.add(currentLine)
+                if (lines.size >= maxLines) return lines.joinToString("\n")
+                currentLine = word
+            }
+        }
+        if (currentLine.isNotEmpty() && lines.size < maxLines) {
+            lines.add(currentLine)
+        }
+        
+        return lines.joinToString("\n")
     }
 
     private suspend fun saveToVideosFolder(zipFile: File): Uri? = withContext(Dispatchers.IO) {
@@ -206,89 +346,6 @@ class MainActivity : AppCompatActivity() {
                     input.copyTo(output)
                 }
             }
-        }
-    }
-
-    // NATIVE ANDROID VIDEO CONCATENATION - NO FFMPEG NEEDED
-    private suspend fun concatenateVideos(cacheDir: File, outputDir: File, index: Int) = withContext(Dispatchers.IO) {
-        val outputPath = File(outputDir, "video_$index.mp4").absolutePath
-        val muxer = MediaMuxer(outputPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
-        
-        var videoTrackIndex = -1
-        var audioTrackIndex = -1
-        var currentOffset = 0L
-        
-        try {
-            // Concatenate all 5 videos
-            for (i in 1..5) {
-                val videoPath = File(cacheDir, "$i.mp4").absolutePath
-                val extractor = MediaExtractor()
-                extractor.setDataSource(videoPath)
-                
-                try {
-                    // Process each track (video and audio)
-                    for (trackIndex in 0 until extractor.trackCount) {
-                        val format = extractor.getTrackFormat(trackIndex)
-                        val mime = format.getString(MediaFormat.KEY_MIME) ?: continue
-                        
-                        extractor.selectTrack(trackIndex)
-                        
-                        // Add track to muxer if not already added
-                        if (mime.startsWith("video/") && videoTrackIndex == -1) {
-                            // Force 1080x1920 resolution
-                            val newFormat = MediaFormat().apply {
-                                setString(MediaFormat.KEY_MIME, mime)
-                                setInteger(MediaFormat.KEY_WIDTH, 1080)
-                                setInteger(MediaFormat.KEY_HEIGHT, 1920)
-                                if (format.containsKey(MediaFormat.KEY_COLOR_STANDARD)) {
-                                    setInteger(MediaFormat.KEY_COLOR_STANDARD, format.getInteger(MediaFormat.KEY_COLOR_STANDARD))
-                                }
-                                if (format.containsKey(MediaFormat.KEY_COLOR_RANGE)) {
-                                    setInteger(MediaFormat.KEY_COLOR_RANGE, format.getInteger(MediaFormat.KEY_COLOR_RANGE))
-                                }
-                                if (format.containsKey(MediaFormat.KEY_COLOR_TRANSFER)) {
-                                    setInteger(MediaFormat.KEY_COLOR_TRANSFER, format.getInteger(MediaFormat.KEY_COLOR_TRANSFER))
-                                }
-                                if (format.containsKey(MediaFormat.KEY_FRAME_RATE)) {
-                                    setInteger(MediaFormat.KEY_FRAME_RATE, format.getInteger(MediaFormat.KEY_FRAME_RATE))
-                                }
-                            }
-                            videoTrackIndex = muxer.addTrack(newFormat)
-                        } else if (mime.startsWith("audio/") && audioTrackIndex == -1) {
-                            audioTrackIndex = muxer.addTrack(format)
-                        }
-                        
-                        // Copy samples with adjusted timestamps
-                        val buffer = ByteBuffer.allocate(1024 * 1024)
-                        val bufferInfo = MediaCodec.BufferInfo()
-                        
-                        while (true) {
-                            val sampleSize = extractor.readSampleData(buffer, 0)
-                            if (sampleSize < 0) break
-                            
-                            bufferInfo.offset = 0
-                            bufferInfo.size = sampleSize
-                            bufferInfo.presentationTimeUs = extractor.sampleTime + currentOffset
-                            bufferInfo.flags = extractor.sampleFlags
-                            
-                            val targetTrack = if (mime.startsWith("video/")) videoTrackIndex else audioTrackIndex
-                            if (targetTrack != -1) {
-                                muxer.writeSampleData(targetTrack, buffer, bufferInfo)
-                            }
-                            
-                            extractor.advance()
-                        }
-                        
-                        // Update offset for next video
-                        currentOffset += extractor.sampleTime
-                    }
-                } finally {
-                    extractor.release()
-                }
-            }
-        } finally {
-            muxer.stop()
-            muxer.release()
         }
     }
 
