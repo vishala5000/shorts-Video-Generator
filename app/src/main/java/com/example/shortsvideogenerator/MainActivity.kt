@@ -84,7 +84,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun checkPermissions(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            true // MediaStore handles this automatically on Android 10+
+            true
         } else {
             ContextCompat.checkSelfPermission(this, android.Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
         }
@@ -162,7 +162,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Use MediaStore.Files for maximum compatibility with .zip files across all Android versions
         val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
         } else {
@@ -193,7 +192,8 @@ class MainActivity : AppCompatActivity() {
     private suspend fun extractAssets(cacheDir: File) = coroutineScope {
         val assetManager = applicationContext.assets
         val filesToExtract = mutableListOf("font.ttf")
-        for (i in 1..200) {
+        // TEST BUILD: Only extract 5 videos
+        for (i in 1..5) {
             filesToExtract.add("$i.mp4")
         }
 
@@ -207,7 +207,7 @@ class MainActivity : AppCompatActivity() {
             return@coroutineScope
         }
 
-        val chunkSize = 20
+        val chunkSize = 5
         pendingExtractions.chunked(chunkSize).forEach { chunk ->
             chunk.map { fileName ->
                 async(Dispatchers.IO) {
@@ -263,12 +263,11 @@ class MainActivity : AppCompatActivity() {
     private suspend fun generateVideoForLine(text: String, index: Int, cacheDir: File, outputDir: File) {
         val inputsFile = File(cacheDir, "inputs.txt")
         val sb = StringBuilder()
-        for (i in 1..200) {
+        // TEST BUILD: Loop 5 times. 8 seconds / 5 clips = 1.6 seconds per clip
+        for (i in 1..5) {
             val videoPath = File(cacheDir, "$i.mp4").absolutePath.replace("'", "\\'")
-            
-            // CRITICAL: inpoint and outpoint MUST precede the file directive in FFmpeg concat demuxer
             sb.append("inpoint 0\n")
-            sb.append("outpoint 0.04\n")
+            sb.append("outpoint 1.6\n")
             sb.append("file '$videoPath'\n")
         }
         inputsFile.writeText(sb.toString())
