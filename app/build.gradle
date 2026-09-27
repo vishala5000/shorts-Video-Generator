@@ -15,6 +15,11 @@ android {
         versionName "1.0"
     }
 
+    // CRITICAL: Prevent Android from compressing mp4 files in the APK
+    aaptOptions {
+        noCompress 'mp4'
+    }
+
     buildTypes {
         release {
             minifyEnabled false
@@ -37,9 +42,6 @@ dependencies {
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
     
-    // FFmpeg Kit (Community Maintained Fork)
     implementation 'dev.ffmpegkit-maintained:ffmpeg-kit-full:6.0.3'
-    
-    // CRITICAL FIX: Prevents NoClassDefFoundError crash
     implementation 'com.arthenica:smart-exception-java:0.2.1'
 }
