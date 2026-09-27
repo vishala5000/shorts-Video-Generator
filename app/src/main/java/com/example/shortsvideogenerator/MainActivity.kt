@@ -192,7 +192,6 @@ class MainActivity : AppCompatActivity() {
     private suspend fun extractAssets(cacheDir: File) = coroutineScope {
         val assetManager = applicationContext.assets
         val filesToExtract = mutableListOf("font.ttf")
-        // TEST BUILD: Only extract 5 videos
         for (i in 1..5) {
             filesToExtract.add("$i.mp4")
         }
@@ -263,7 +262,6 @@ class MainActivity : AppCompatActivity() {
     private suspend fun generateVideoForLine(text: String, index: Int, cacheDir: File, outputDir: File) {
         val inputsFile = File(cacheDir, "inputs.txt")
         val sb = StringBuilder()
-        // TEST BUILD: Loop 5 times. 8 seconds / 5 clips = 1.6 seconds per clip
         for (i in 1..5) {
             val videoPath = File(cacheDir, "$i.mp4").absolutePath.replace("'", "\\'")
             sb.append("inpoint 0\n")
@@ -294,8 +292,21 @@ class MainActivity : AppCompatActivity() {
 
         val session = FFmpegKit.executeWithArguments(args)
         if (!ReturnCode.isSuccess(session.returnCode)) {
-            val logs = session.allLogsAsString.split("\n").takeLast(15).joinToString("\n")
-            throw Exception("FFmpeg failed for line $index.\nDetails:\n$logs")
+            // CRITICAL FIX: Extract ONLY the actual error lines instead of the generic version banner
+            val logs = session.allLogsAsString
+            val errorLines = logs.split("\n").filter { line ->
+                val lower = line.lowercase()
+                lower.contains("error") || lower.contains("fatal") || lower.contains("failed") || 
+                lower.contains("invalid") || lower.contains("no such file") || lower.contains("cannot")
+            }
+            
+            val displayMessage = if (errorLines.isNotEmpty()) {
+                errorLines.take(10).joinToString("\n") // Show up to 10 relevant error lines
+            } else {
+                logs.split("\n").takeLast(15).joinToString("\n")
+            }
+            
+            throw Exception("FFmpeg failed for line $index.\n$displayMessage")
         }
     }
 
