@@ -28,6 +28,10 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
+    # ⚠️ NEW: Clean old builds to prevent caching issues
+    - name: Clean Project
+      run: ./gradlew clean
+
     - name: Generate Release Keystore
       run: |
         echo "🔐 Generating signing keystore..."
