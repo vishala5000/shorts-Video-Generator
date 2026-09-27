@@ -40,6 +40,6 @@ dependencies {
     // FFmpeg Kit (Community Maintained Fork)
     implementation 'dev.ffmpegkit-maintained:ffmpeg-kit-full:6.0.3'
     
-    // ⚠️ CRITICAL FIX: This line MUST be here to prevent the crash
+    // CRITICAL FIX: Prevents NoClassDefFoundError crash
     implementation 'com.arthenica:smart-exception-java:0.2.1'
 }
