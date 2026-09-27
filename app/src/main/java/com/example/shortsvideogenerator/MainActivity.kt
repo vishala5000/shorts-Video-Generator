@@ -179,11 +179,18 @@ class MainActivity : AppCompatActivity() {
         textBitmap: Bitmap,
         outputPath: String
     ) = suspendCancellableCoroutine { continuation ->
+        // 1. Create the overlay effect
         val overlayEffect = BitmapOverlay.createStaticBitmapOverlay(textBitmap)
         val effects = Effects(listOf(overlayEffect), listOf())
         
-        val sequence = EditedMediaItemSequence(mediaItems.map { EditedMediaItem.Builder(it).build() })
-        val editedMediaItem = EditedMediaItem.Builder(sequence).setEffects(effects).build()
+        // 2. Apply effects to EACH media item, then build the sequence
+        val editedMediaItems = mediaItems.map { 
+            EditedMediaItem.Builder(it).setEffects(effects).build() 
+        }
+        val sequence = EditedMediaItemSequence(editedMediaItems)
+        
+        // 3. Build the Composition (this is what Transformer.start() expects)
+        val composition = Composition.Builder(sequence).build()
         
         var transformerStarted = false
         var transformerCompleted = false
@@ -198,6 +205,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 
+                // CORRECT SIGNATURE for Media3 1.4.1
                 override fun onError(composition: Composition, exportResult: ExportResult, exception: Exception) {
                     transformerCompleted = true
                     if (continuation.isActive) {
@@ -208,7 +216,8 @@ class MainActivity : AppCompatActivity() {
             .build()
         
         try {
-            transformer.start(editedMediaItem, outputPath)
+            // CORRECT METHOD: start(Composition, String) removes ambiguity
+            transformer.start(composition, outputPath)
             transformerStarted = true
         } catch (e: Exception) {
             if (continuation.isActive) {
@@ -222,7 +231,7 @@ class MainActivity : AppCompatActivity() {
                 try {
                     transformer.cancel()
                 } catch (e: Exception) {
-                    // Ignore cancellation errors
+                    // Ignore cancellation state errors
                 }
             }
         }
@@ -246,13 +255,13 @@ class MainActivity : AppCompatActivity() {
         }
         
         val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#80000000")
+            color = Color.parseColor("#80000000") // black@0.5
             style = Paint.Style.FILL
         }
         
         val lines = wrappedText.split("\n")
         val fontMetrics = paint.fontMetrics
-        val lineHeight = fontMetrics.descent - fontMetrics.ascent + 2f
+        val lineHeight = fontMetrics.descent - fontMetrics.ascent + 2f // line_spacing=2
         
         var currentY = 300f
         
