@@ -25,9 +25,11 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.effect.BitmapOverlay
 import androidx.media3.effect.Effects
+import androidx.media3.effect.OverlayEffect
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
+import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.Transformer
 import com.google.android.material.textfield.TextInputEditText
@@ -179,8 +181,9 @@ class MainActivity : AppCompatActivity() {
         textBitmap: Bitmap,
         outputPath: String
     ) = suspendCancellableCoroutine { continuation ->
-        // 1. Create the overlay effect
-        val overlayEffect = BitmapOverlay.createStaticBitmapOverlay(textBitmap)
+        // 1. Create the overlay effect using the CORRECT Media3 classes
+        val bitmapOverlay = BitmapOverlay.createStaticBitmapOverlay(textBitmap)
+        val overlayEffect = OverlayEffect(listOf(bitmapOverlay))
         val effects = Effects(listOf(overlayEffect), listOf())
         
         // 2. Apply effects to EACH media item, then build the sequence
@@ -205,8 +208,8 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 
-                // CORRECT SIGNATURE for Media3 1.4.1
-                override fun onError(composition: Composition, exportResult: ExportResult, exception: Exception) {
+                // CORRECT SIGNATURE for Media3 1.4.1: uses ExportException, not Exception
+                override fun onError(composition: Composition, exportResult: ExportResult, exception: ExportException) {
                     transformerCompleted = true
                     if (continuation.isActive) {
                         continuation.resumeWithException(exception)
