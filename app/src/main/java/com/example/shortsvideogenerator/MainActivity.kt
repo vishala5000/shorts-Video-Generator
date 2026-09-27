@@ -143,7 +143,6 @@ class MainActivity : AppCompatActivity() {
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    // Show the FULL error message so we know exactly what failed
                     statusText.text = "❌ Error:\n${e.message}"
                     generateButton.isEnabled = true
                     progressBar.visibility = ProgressBar.GONE
@@ -264,7 +263,6 @@ class MainActivity : AppCompatActivity() {
         val inputsFile = File(cacheDir, "inputs.txt")
         val sb = StringBuilder()
         
-        // DEBUG STEP 1: Simplified concat without inpoint/outpoint to test if that was the cause
         for (i in 1..5) {
             val videoPath = File(cacheDir, "$i.mp4").absolutePath
             sb.append("file '$videoPath'\n")
@@ -279,8 +277,9 @@ class MainActivity : AppCompatActivity() {
         val fontPath = File(cacheDir, "font.ttf").absolutePath
         val textFilePath = textFile.absolutePath
 
-        // DEBUG STEP 2: Ultra-simple drawtext filter. If this works, we know which parameter was breaking it.
-        val filter = "drawtext=fontfile='$fontPath':textfile='$textFilePath':fontcolor=white:fontsize=60:x=(w-text_w)/2:y=(h-text_h)/2"
+        // CRITICAL FIX: NO quotes around paths in the filter string!
+        // When using executeWithArguments, each array element is already a separate argument
+        val filter = "drawtext=fontfile=$fontPath:textfile=$textFilePath:fontcolor=white:fontsize=60:x=(w-text_w)/2:y=(h-text_h)/2"
 
         val args = arrayOf(
             "-y",
