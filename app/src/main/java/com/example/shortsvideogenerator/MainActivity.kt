@@ -143,7 +143,8 @@ class MainActivity : AppCompatActivity() {
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    statusText.text = "❌ Error: ${e.message}"
+                    // Show the FULL error message so we know exactly what failed
+                    statusText.text = "❌ Error:\n${e.message}"
                     generateButton.isEnabled = true
                     progressBar.visibility = ProgressBar.GONE
                 }
@@ -262,10 +263,10 @@ class MainActivity : AppCompatActivity() {
     private suspend fun generateVideoForLine(text: String, index: Int, cacheDir: File, outputDir: File) {
         val inputsFile = File(cacheDir, "inputs.txt")
         val sb = StringBuilder()
+        
+        // DEBUG STEP 1: Simplified concat without inpoint/outpoint to test if that was the cause
         for (i in 1..5) {
             val videoPath = File(cacheDir, "$i.mp4").absolutePath
-            sb.append("inpoint 0\n")
-            sb.append("outpoint 1.6\n")
             sb.append("file '$videoPath'\n")
         }
         inputsFile.writeText(sb.toString())
@@ -278,9 +279,8 @@ class MainActivity : AppCompatActivity() {
         val fontPath = File(cacheDir, "font.ttf").absolutePath
         val textFilePath = textFile.absolutePath
 
-        // CRITICAL FIX: Removed single quotes around paths. Android paths have no spaces, 
-        // and single quotes were causing FFmpeg to split the argument list incorrectly.
-        val filter = "drawtext=fontfile=$fontPath:textfile=$textFilePath:fontcolor=white:fontsize=80:x=200:y=300:box=1:boxcolor=black@0.5:boxborderw=10:line_spacing=2"
+        // DEBUG STEP 2: Ultra-simple drawtext filter. If this works, we know which parameter was breaking it.
+        val filter = "drawtext=fontfile='$fontPath':textfile='$textFilePath':fontcolor=white:fontsize=60:x=(w-text_w)/2:y=(h-text_h)/2"
 
         val args = arrayOf(
             "-y",
@@ -306,12 +306,12 @@ class MainActivity : AppCompatActivity() {
             }
             
             val displayMessage = if (errorLines.isNotEmpty()) {
-                errorLines.take(10).joinToString("\n")
+                errorLines.take(15).joinToString("\n")
             } else {
-                logs.split("\n").takeLast(15).joinToString("\n")
+                logs.split("\n").takeLast(20).joinToString("\n")
             }
             
-            throw Exception("FFmpeg failed for line $index.\n$displayMessage")
+            throw Exception("FFmpeg failed.\nDetails:\n$displayMessage")
         }
     }
 
