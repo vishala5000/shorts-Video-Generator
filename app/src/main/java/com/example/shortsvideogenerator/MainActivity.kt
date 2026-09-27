@@ -277,10 +277,9 @@ class MainActivity : AppCompatActivity() {
         val fontPath = File(cacheDir, "font.ttf").absolutePath
         val textFilePath = textFile.absolutePath
 
-        // CRITICAL FIX: Use FFmpegKit.execute() with a single command string
-        // This is MUCH more reliable than executeWithArguments()
+        // BULLETPROOF: Simple fixed positioning, no parentheses, no special characters
         val command = "-y -f concat -safe 0 -i ${inputsFile.absolutePath} " +
-                "-vf drawtext=fontfile=$fontPath:textfile=$textFilePath:fontcolor=white:fontsize=60:x=(w-text_w)/2:y=(h-text_h)/2 " +
+                "-vf drawtext=fontfile=$fontPath:textfile=$textFilePath:fontcolor=white:fontsize=60:x=200:y=300 " +
                 "-c:v libx264 -preset ultrafast -c:a aac -b:a 128k -s 1080x1920 $outputPath"
 
         val session = FFmpegKit.execute(command)
